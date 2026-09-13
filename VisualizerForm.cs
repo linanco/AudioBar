@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -68,6 +68,14 @@ internal sealed class VisualizerForm : Form
 	private bool isPaused;
 
 	private bool mousePassthrough = true;
+
+        private readonly Color[,][] basePairs = new Color[64, 9][];
+
+        private float highlightBlend;
+
+        private float appliedHighlight = -1f;
+
+        private long lastApplyMs;
 
 	public VisualizerForm()
 	{
@@ -291,7 +299,12 @@ internal sealed class VisualizerForm : Form
 			for (int j = 0; j < 9; j++)
 			{
 				int alphaTop = 70 + (int)Math.Round(170f * (float)j / 8f);
-				barBrushes[i, j] = MakeGradient(c, alphaTop);
+				Color g0 = Color.FromArgb(alphaTop, c);
+					Color g1 = Color.FromArgb(Math.Max(24, alphaTop * 2 / 5), c);
+					basePairs[i, j] = new Color[] { g0, g1 };
+					Color w0 = LerpWhite(g0, highlightBlend);
+					Color w1 = LerpWhite(g1, highlightBlend);
+					barBrushes[i, j] = new LinearGradientBrush(new Rectangle(0, 0, 1, 100), w0, w1, 90f);
 			}
 		}
 	}
@@ -374,7 +387,28 @@ internal sealed class VisualizerForm : Form
 		return new LinearGradientBrush(new Rectangle(0, 0, 1, 100), color, color2, 90f);
 	}
 
-	protected override void OnPaintBackground(PaintEventArgs e)
+	private void ApplyHighlight(float h)
+		{
+			for (int i = 0; i < 64; i++)
+			{
+				for (int j = 0; j < 9; j++)
+				{
+					Color[] b = basePairs[i, j];
+					if (b == null) continue;
+					barBrushes[i, j].LinearColors = new Color[] { LerpWhite(b[0], h), LerpWhite(b[1], h) };
+				}
+			}
+		}
+
+		private static Color LerpWhite(Color c, float h)
+		{
+			if (h <= 0f) return c;
+			float s = Math.Min(1f, h * 2.2f);
+			byte a = (byte)(c.A + (255 - c.A) * Math.Min(1f, h * 0.8f));
+			return Color.FromArgb(a, (int)(c.R + (255 - c.R) * s), (int)(c.G + (255 - c.G) * s), (int)(c.B + (255 - c.B) * s));
+		}
+
+		protected override void OnPaintBackground(PaintEventArgs e)
 	{
 	}
 
@@ -383,6 +417,15 @@ internal sealed class VisualizerForm : Form
 		base.OnPaint(e);
 		e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
 		e.Graphics.Clear(Color.Transparent);
+				float targetH = audioCapture.Highlight;
+				highlightBlend += (targetH - highlightBlend) * 0.7f;
+				long nowMs = Environment.TickCount64;
+				if (Math.Abs(highlightBlend - appliedHighlight) > 0.02f && nowMs - lastApplyMs > 70)
+				{
+					appliedHighlight = highlightBlend;
+					lastApplyMs = nowMs;
+					ApplyHighlight(highlightBlend);
+				}
 		int width = base.ClientSize.Width;
 		int num = Math.Max(2, (width - 252) / 64);
 		int num2 = base.ClientSize.Height - 6;
@@ -421,3 +464,6 @@ internal sealed class VisualizerForm : Form
 	[DllImport("user32.dll")]
 	private static extern int SetWindowLong(nint hWnd, int nIndex, int dwNewLong);
 }
+
+
+

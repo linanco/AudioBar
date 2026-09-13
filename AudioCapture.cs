@@ -42,6 +42,10 @@ internal sealed class AudioCapture : IDisposable
 
 	private float voicePeak;
 
+        private float highEnv;
+        private float highPeak;
+        private float highlight;
+
 	private int sampleCount;
 
 	private int breathPhase;
@@ -49,6 +53,17 @@ internal sealed class AudioCapture : IDisposable
 	private int diagCount;
 
 	public float LastRms { get; private set; }
+
+        public float Highlight
+        {
+            get
+            {
+                lock (sync)
+                {
+                    return highlight;
+                }
+            }
+        }
 
 	public AudioCapture(float[] spectrum)
 	{
@@ -320,6 +335,7 @@ internal sealed class AudioCapture : IDisposable
 		float vocalE = BandMean(bar, 20, 44);
 		float formantE = BandMean(bar, 45, 53);
 		float hiE = BandMean(bar, 54, 62);
+			float trebleE = BandMean(bar, 45, 62); // 上中频(齿音)+高频一起算，高音素材更足更易触发
 
 		// 人声存在度：取"旋律+齿音"能量的包络，慢速自动增益得到 0..1 活跃度
 		float vp = Math.Max(vocalE, formantE);
@@ -328,6 +344,10 @@ internal sealed class AudioCapture : IDisposable
 		else voicePeak += (0.9f - voicePeak) * 0.12f; // 基准缓慢回落，避免人声一停就顶满
 		voicePeak = Math.Max(voicePeak, 1E-06f);
 		float voiceP = Math.Min(1f, voiceEnv / voicePeak);
+
+            // 高音活跃度：高音频段活跃度经慢速自动增益，驱动柱子变白
+            highEnv = trebleE > highEnv ? highEnv + (trebleE - highEnv) * 0.8f : highEnv + (trebleE - highEnv) * 0.3f;
+            highlight = Math.Min(1f, Math.Max(0f, (highEnv - 0.05f) * 2.4f)); // 阈值+增益：上中/高频一现就明显闪白 // 高音能量直接放大驱动，一有高音就明显变白
 
 		// 3) 按所属频段加权：人声出现时中频段明显抬起，低音/高音独立起伏，互不抢戏
 		for (int i = 0; i < M; i++)
@@ -439,5 +459,8 @@ internal sealed class AudioCapture : IDisposable
 		}
 	}
 }
+
+
+
 
 
