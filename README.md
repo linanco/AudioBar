@@ -1,21 +1,44 @@
-﻿# 音频条 AudioBar
+﻿# AudioBar
 
-一个跟随系统音乐而跳动的桌面音频条（Windows / WinForms / .NET 9 / NAudio）。
+AudioBar is a real-time desktop audio visualizer for Windows. It captures the system output mix via WASAPI loopback and renders a configurable spectrum bar over the taskbar area, with per-bar peak normalization, multi-band independent detection and a soft saturation curve.
 
-![效果预览](screenshot.png)
+![Effect Preview](screenshot.png)
 
-## ✨ V1.0.2
+## Features
 
-- **高音变白**：齿音/镲片/高频一现，柱子闪白，退去自动回原色`n- **多频段独立检测**：低音 / 旋律·人声主体 / 人声齿音(2–6kHz) / 高音各自独立起伏，互不抢戏
-- **人声存在度检测**：说话 / 唱歌时中频段明显抬起，无人声时自动回落
-- **软饱和动态曲线**：持续音停在中等高度，只有鼓点等瞬态才能冲顶，不再"整天贴顶成一条直线"
-- **保留动感手感**：每柱相对自身峰值归一化，快起慢落
-- **稳定可靠**：音频设备热插拔自愈、看门狗、单实例互斥（禁止重复打开）
+- **Per-bar peak normalization** — each bar follows its own peak envelope (fast attack / slow release) to preserve dynamic response across frequency bands.
+- **Multi-band independent detection** — low-end, mid-range (vocal), presence (2–6 kHz) and high-end bands are tracked separately so voice, melody and transients no longer compete for visual headroom.
+- **High-end highlight** — bars flash white on presence / hi-hat / high-solo activity and smoothly fade back to the wallpaper-derived gradient.
+- **Soft saturation curve** — continuous tones settle at moderate heights, only transient events (kicks, snares, plucks) push the bars to the top, eliminating the "all-flat-top" problem.
+- **Robust capture lifecycle** — automatic device reattachment on hot-plug, watchdog recovery, and single-instance enforcement via a named mutex.
 
-## 🛠 编译
+## Requirements
 
-- 前置：.NET 9 SDK + Windows
-- 命令行：`dotnet build -c Release`
-- 产物：`bin\Release\net9.0-windows\AudioBar.exe`
+- Windows 10 / 11 x64
+- .NET 9 Desktop Runtime (the self-contained release binary ships the runtime and needs no pre-installation)
 
+## Build
 
+```bash
+dotnet build -c Release
+```
+
+Build output: `bin\Release\net9.0-windows\AudioBar.exe`
+
+For a single-file self-contained binary (recommended for distribution):
+
+```bash
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
+```
+
+## Run
+
+```bash
+dotnet run -c Release
+```
+
+Or launch the published `AudioBar.exe` directly.
+
+## License
+
+TBD
