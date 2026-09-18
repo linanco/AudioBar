@@ -1,44 +1,44 @@
-﻿# AudioBar
+﻿# AudioBar 音频条
 
-AudioBar is a real-time desktop audio visualizer for Windows. It captures the system output mix via WASAPI loopback and renders a configurable spectrum bar over the taskbar area, with per-bar peak normalization, multi-band independent detection and a soft saturation curve.
+AudioBar 是一款运行于 Windows 平台的桌面音频可视化工具。通过 WASAPI loopback 捕获系统输出混音，在任务栏上方以频谱条形呈现实时音频，采用每柱峰值归一化、多频段独立检测与软饱和曲线，动态层次清晰稳定。
 
-![Effect Preview](screenshot.png)
+![效果预览](screenshot.png)
 
-## Features
+## 功能特性
 
-- **Per-bar peak normalization** — each bar follows its own peak envelope (fast attack / slow release) to preserve dynamic response across frequency bands.
-- **Multi-band independent detection** — low-end, mid-range (vocal), presence (2–6 kHz) and high-end bands are tracked separately so voice, melody and transients no longer compete for visual headroom.
-- **High-end highlight** — bars flash white on presence / hi-hat / high-solo activity and smoothly fade back to the wallpaper-derived gradient.
-- **Soft saturation curve** — continuous tones settle at moderate heights, only transient events (kicks, snares, plucks) push the bars to the top, eliminating the "all-flat-top" problem.
-- **Robust capture lifecycle** — automatic device reattachment on hot-plug, watchdog recovery, and single-instance enforcement via a named mutex.
+- **每柱峰值归一化**：各条独立维护包络（快起慢落），各频段动态互不干扰。
+- **多频段独立检测**：低频、人声主体（300 Hz–3 kHz）、齿音区（2–6 kHz）、高频四段独立跟踪，避免人声、旋律与瞬态抢占视觉空间。
+- **高音高亮**： presence 频段 / 镲片 / 高 solo 出现时柱子弹闪白，退去自动回到壁纸渐变色。
+- **软饱和动态曲线**：持续音停在中等高度，只有鼓点等瞬态才能冲顶，消除"整条贴顶成线"的问题。
+- **可靠捕获生命周期**：设备热插拔自动重连、看门狗恢复、命名互斥体保证单实例运行。
 
-## Requirements
+## 运行环境
 
 - Windows 10 / 11 x64
-- .NET 9 Desktop Runtime (the self-contained release binary ships the runtime and needs no pre-installation)
+- .NET 9 Desktop Runtime（发布版已自包含，无需额外安装）
 
-## Build
+## 编译
 
 ```bash
 dotnet build -c Release
 ```
 
-Build output: `bin\Release\net9.0-windows\AudioBar.exe`
+产物路径：`bin\Release\net9.0-windows\AudioBar.exe`
 
-For a single-file self-contained binary (recommended for distribution):
+如需发布为自包含单文件（推荐分发方式）：
 
 ```bash
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
 ```
 
-## Run
+## 运行
 
 ```bash
 dotnet run -c Release
 ```
 
-Or launch the published `AudioBar.exe` directly.
+或直接运行发布产物 `AudioBar.exe`。
 
-## License
+## 许可证
 
-TBD
+待定
