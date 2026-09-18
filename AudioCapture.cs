@@ -1,10 +1,10 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Numerics;
+using System.Text.Json;
 using System.Windows.Forms;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
-
 namespace AudioBar;
 
 internal sealed class AudioCapture : IDisposable
@@ -47,6 +47,75 @@ internal sealed class AudioCapture : IDisposable
         private float highlight;
 
 	private int sampleCount;
+    // ===== 可调参数（主面板拖动 TrackBar 实时写入，JSON 持久化） =====
+    public float BassBoost = 0.30f;
+    public float VocalBoost = 0.85f;
+    public float TrebleBoost = 0.25f;
+    public float KickSensitivity = 1.0f;
+    public float HighlightThreshold = 0.05f;
+    public float HighlightGain = 2.4f;
+    public float HighlightStrength = 1.0f;
+    public float SoftSat = 1.05f;
+    public float HeightScale = 1.0f;
+
+    public enum Preset { Default, PunchyBass, EDM, VocalClear, Sparkle }
+    public void ApplyPreset(Preset p) { lock(sync) { switch(p) {
+        case Preset.PunchyBass: BassBoost=0.8f; VocalBoost=0.5f; TrebleBoost=0.15f; KickSensitivity=1.6f; SoftSat=1.15f; break;
+        case Preset.EDM: BassBoost=0.6f; VocalBoost=0.4f; TrebleBoost=0.6f; KickSensitivity=1.3f; SoftSat=1.2f; break;
+        case Preset.VocalClear: BassBoost=0.25f; VocalBoost=1.2f; TrebleBoost=0.35f; KickSensitivity=0.7f; SoftSat=1.0f; break;
+        case Preset.Sparkle: BassBoost=0.25f; VocalBoost=0.55f; TrebleBoost=1.0f; KickSensitivity=0.8f; SoftSat=1.0f; break;
+        default: BassBoost=0.30f; VocalBoost=0.85f; TrebleBoost=0.25f; KickSensitivity=1.0f; SoftSat=1.05f; break;
+        } } }
+    public float KickEnv;
+
+    public static string SettingsPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AudioBar", "settings.json");
+
+    public static AudioSettings LoadSettings()
+    {
+        try
+        {
+            var p = SettingsPath;
+            if (!File.Exists(p)) return new AudioSettings();
+            return JsonSerializer.Deserialize<AudioSettings>(File.ReadAllText(p)) ?? new AudioSettings();
+        }
+        catch { return new AudioSettings(); }
+    }
+
+    public void Apply(AudioSettings s)
+    {
+        lock (sync)
+        {
+            BassBoost = Math.Clamp(s.BassBoost, 0f, 1.5f);
+            VocalBoost = Math.Clamp(s.VocalBoost, 0f, 1.5f);
+            TrebleBoost = Math.Clamp(s.TrebleBoost, 0f, 1.5f);
+            KickSensitivity = Math.Clamp(s.KickSensitivity, 0f, 2f);
+            HighlightThreshold = Math.Clamp(s.HighlightThreshold, 0f, 0.3f);
+            HighlightGain = Math.Clamp(s.HighlightGain, 0f, 6f);
+            HighlightStrength = Math.Clamp(s.HighlightStrength, 0f, 1.5f);
+            SoftSat = Math.Clamp(s.SoftSat, 0.5f, 2f);
+            HeightScale = Math.Clamp(s.HeightScale, 0.5f, 1.5f);
+        }
+    }
+
+    public AudioSettings Snapshot()
+    {
+        lock (sync)
+        {
+            return new AudioSettings(BassBoost, VocalBoost, TrebleBoost, KickSensitivity, HighlightThreshold, HighlightGain, HighlightStrength, SoftSat, HeightScale);
+        }
+    }
+
+    public void Save()
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(SettingsPath)!;
+            Directory.CreateDirectory(dir);
+            File.WriteAllText(SettingsPath, JsonSerializer.Serialize(Snapshot(), new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"AudioBar Save failed: {ex.Message}"); }
+    }
+
 
 	private int breathPhase;
 
@@ -347,30 +416,25 @@ internal sealed class AudioCapture : IDisposable
 
             // 高音活跃度：高音频段活跃度经慢速自动增益，驱动柱子变白
             highEnv = trebleE > highEnv ? highEnv + (trebleE - highEnv) * 0.8f : highEnv + (trebleE - highEnv) * 0.3f;
-            highlight = Math.Min(1f, Math.Max(0f, (highEnv - 0.05f) * 2.4f)); // 阈值+增益：上中/高频一现就明显闪白 // 高音能量直接放大驱动，一有高音就明显变白
+        float rawH = Math.Max(0f, (highEnv - HighlightThreshold) * HighlightGain);
+        highlight = Math.Clamp(rawH, 0f, 1f) * HighlightStrength;  // Strength 直接控制白化上限 0=不白 1=纯白
 
-		// 3) 按所属频段加权：人声出现时中频段明显抬起，低音/高音独立起伏，互不抢戏
+		// 鼓点检测：低频（bars0-5）瞬时尖峰 → KickEnv 快速冲高慢回落
+		float kickRaw = BandMean(bar, 0, 5);
+		float kickPeakHit = kickRaw - KickEnv; // 正向为新鼓点
+		KickEnv = kickPeakHit > 0 ? KickEnv + kickPeakHit * 0.6f * KickSensitivity : KickEnv + kickPeakHit * 0.08f;
+
+		// 3) 按所属频段加权：各段 boost 可被主面板实时调节
 		for (int i = 0; i < M; i++)
 		{
 			float f = (float)i / (float)(M - 1);
-			float dim = 1f - 0.10f * f; // 高音略收（沿用原版防常年钉顶）
+			float dim = 1f - 0.10f * f;
 			float boost = 1f;
-			if (i <= 5)
-			{
-				boost = 1f + 0.30f * bassE;
-			}
-			else if (i >= 20 && i <= 53)
-			{
-				// 人声/旋律段：齿音(45+)给 0.7 权重，主体给满权重
-				boost = 1f + 0.85f * voiceP * (i >= 45 ? 0.7f : 1f);
-			}
-			else if (i >= 54)
-			{
-				boost = 1f + 0.25f * hiE;
-			}
-			float v = Math.Max(0f, bar[i] * dim * boost);
-			// 软饱和曲线：持续音停在中等高度，只有鼓点/瞬态才能冲顶，杜绝一条直线
-			v = 1f - (float)Math.Exp(-1.05f * v);
+			if (i <= 5) boost = 1f + BassBoost * bassE + KickEnv * 0.6f * KickSensitivity;
+			else if (i >= 20 && i <= 53) boost = 1f + VocalBoost * voiceP * (i >= 45 ? 0.7f : 1f);
+			else if (i >= 54) boost = 1f + TrebleBoost * hiE;
+			float v = Math.Max(0f, bar[i] * dim * boost * HeightScale);
+			v = 1f - (float)Math.Exp(-SoftSat * v);
 			bar[i] = Math.Max(0.01f, Math.Min(0.99f, v));
 		}
 
@@ -459,6 +523,10 @@ internal sealed class AudioCapture : IDisposable
 		}
 	}
 }
+
+
+
+
 
 
 

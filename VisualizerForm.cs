@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -65,6 +65,15 @@ internal sealed class VisualizerForm : Form
 
 	private bool showPeaks;
 
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool ShowPeaks { get => showPeaks; set { showPeaks = value; Invalidate(); } }
+
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool IsPaused { get => isPaused; set => isPaused = value; }
+
+        [System.ComponentModel.DesignerSerializationVisibility(System.ComponentModel.DesignerSerializationVisibility.Hidden)]
+        public bool MousePassthrough { get => mousePassthrough; set { mousePassthrough = value; ApplyWindowStyle(); } }
+
 	private bool isPaused;
 
 	private bool mousePassthrough = true;
@@ -104,12 +113,10 @@ internal sealed class VisualizerForm : Form
 			Visible = true,
 			ContextMenuStrip = BuildMenu()
 		};
-		trayIcon.DoubleClick += delegate
-		{
-			TogglePassthrough();
-		};
+            trayIcon.DoubleClick += delegate { OpenSettings(); };
 		audioCapture = new AudioCapture(spectrum);
-		audioCapture.Start();
+            audioCapture.Apply(AudioCapture.LoadSettings());
+            audioCapture.Start();
 		animationTimer.Tick += delegate
 		{
 			if (!isPaused)
@@ -122,54 +129,40 @@ internal sealed class VisualizerForm : Form
 		base.FormClosed += delegate
 		{
 			animationTimer.Stop();
+                    audioCapture.Save();
 			audioCapture.Dispose();
 			trayIcon.Visible = false;
 			trayIcon.Dispose();
 		};
 	}
 
-	private ContextMenuStrip BuildMenu()
-	{
-		ContextMenuStrip contextMenuStrip = new ContextMenuStrip();
-		ToolStripMenuItem pauseItem = new ToolStripMenuItem("暂停动画");
-		pauseItem.Click += delegate
-		{
-			isPaused = !isPaused;
-			pauseItem.Text = (isPaused ? "继续动画" : "暂停动画");
-		};
-		ToolStripMenuItem passthroughItem = new ToolStripMenuItem("鼠标穿透")
-		{
-			Checked = true,
-			CheckOnClick = true
-		};
-		passthroughItem.Click += delegate
-		{
-			mousePassthrough = passthroughItem.Checked;
-			ApplyWindowStyle();
-		};
-		ToolStripMenuItem peakItem = new ToolStripMenuItem("显示峰值方块")
-		{
-			Checked = showPeaks,
-			CheckOnClick = true
-		};
-		peakItem.Click += delegate
-		{
-			showPeaks = peakItem.Checked;
-			Invalidate();
-		};
-		ToolStripMenuItem toolStripMenuItem = new ToolStripMenuItem("退出程序");
-		toolStripMenuItem.Click += delegate
-		{
-			Close();
-		};
-		contextMenuStrip.Items.Add(pauseItem);
-		contextMenuStrip.Items.Add(passthroughItem);
-		contextMenuStrip.Items.Add(peakItem);
-		contextMenuStrip.Items.Add(new ToolStripSeparator());
-		contextMenuStrip.Items.Add(toolStripMenuItem);
-		return contextMenuStrip;
-	}
+    private ContextMenuStrip BuildMenu()
+    {
+        var menu = new ContextMenuStrip();
+        var open = new ToolStripMenuItem("打开主面板");
+        open.Click += delegate { OpenSettings(); };
+        var quit = new ToolStripMenuItem("退出程序");
+        quit.Click += delegate { Close(); };
+        menu.Items.Add(open);
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(quit);
+        return menu;
+    }
 
+    private SettingsForm? _settingsForm;
+    public void OpenSettings()
+    {
+        if (_settingsForm == null || _settingsForm.IsDisposed)
+        {
+            _settingsForm = new SettingsForm(this, audioCapture);
+            _settingsForm.FormClosed += (_, _) => _settingsForm = null;
+            _settingsForm.Show(this);
+        }
+        else
+        {
+            _settingsForm.Activate();
+        }
+    }
 	private void TogglePassthrough()
 	{
 		mousePassthrough = !mousePassthrough;
@@ -403,7 +396,7 @@ internal sealed class VisualizerForm : Form
 		private static Color LerpWhite(Color c, float h)
 		{
 			if (h <= 0f) return c;
-			float s = Math.Min(1f, h * 2.2f);
+                        float s = Math.Clamp(h, 0f, 1f);  // h 已是 AudioCapture 计算好的白化比例
 			byte a = (byte)(c.A + (255 - c.A) * Math.Min(1f, h * 0.8f));
 			return Color.FromArgb(a, (int)(c.R + (255 - c.R) * s), (int)(c.G + (255 - c.G) * s), (int)(c.B + (255 - c.B) * s));
 		}
@@ -452,7 +445,8 @@ internal sealed class VisualizerForm : Form
 	{
 		if (disposing)
 		{
-			audioCapture.Dispose();
+                    audioCapture.Save(); // Dispose 路径兜底保存
+                    audioCapture.Dispose();
 			trayIcon.Dispose();
 		}
 		base.Dispose(disposing);
