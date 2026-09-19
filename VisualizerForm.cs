@@ -75,6 +75,12 @@ internal sealed class VisualizerForm : Form
         public bool MousePassthrough { get => mousePassthrough; set { mousePassthrough = value; ApplyWindowStyle(); } }
 
 	private bool isPaused;
+    private float[] hoverFade = new float[BarCount];  // 每根柱独立 hover 收起量
+    private readonly System.Windows.Forms.Timer hoverTimer = new() { Interval = 50 };
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int X; public int Y; }
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out POINT lpPoint);
 
 	private bool mousePassthrough = true;
 
@@ -126,6 +132,8 @@ internal sealed class VisualizerForm : Form
 			}
 		};
 		animationTimer.Start();
+        hoverTimer.Tick += delegate { UpdateHoverFade(); };
+        hoverTimer.Start();
 		base.FormClosed += delegate
 		{
 			animationTimer.Stop();
@@ -401,7 +409,45 @@ internal sealed class VisualizerForm : Form
 			return Color.FromArgb(a, (int)(c.R + (255 - c.R) * s), (int)(c.G + (255 - c.G) * s), (int)(c.B + (255 - c.B) * s));
 		}
 
-		protected override void OnPaintBackground(PaintEventArgs e)
+		    private void UpdateHoverFade()
+    {
+        if (!GetCursorPos(out var pt)) return;
+        var screen = Screen.PrimaryScreen?.WorkingArea ?? Rectangle.Empty;
+        var barArea = new Rectangle(screen.Left, screen.Bottom - Height, screen.Width, Height);
+
+        // 鼠标是否在音频条 Y 范围内（贴底区域）
+        if (pt.Y < barArea.Top - 4 || pt.Y > barArea.Bottom)
+        {
+            // 不在区域内，全部往 0 回
+            for (var i = 0; i < BarCount; i++)
+                hoverFade[i] += (0f - hoverFade[i]) * 0.1f;
+            return;
+        }
+
+        // 算出鼠标 X 落在哪根柱
+        var relX = pt.X - barArea.Left;
+        var barW = barArea.Width / (float)BarCount;
+        var mouseBar = relX / barW;  // 可能是小数，比如 32.7
+        var mouseBarIdx = BarCount - 1 - mouseBar;  // 对齐 OnPaint 里 num3=63-i 的索引反转
+
+        // 高斯权重：距离越近，target 越大（缩得越多）
+        // sigma 控制影响半径（约 ±6 根柱）
+        const float sigma = 3.5f;
+        const float maxShrink = 0.85f;  // 最靠近的那根缩到 15%
+
+        for (var i = 0; i < BarCount; i++)
+        {
+            var dist = Math.Abs(i - mouseBarIdx);
+            if (dist > sigma * 3f) { hoverFade[i] += (0f - hoverFade[i]) * 0.12f; continue; }
+            var weight = (float)Math.Exp(-(dist * dist) / (2f * sigma * sigma));
+            var target = weight * maxShrink;
+            // 靠近收得快，远的回得也快
+            var close = weight > 0.3f;
+            hoverFade[i] += (target - hoverFade[i]) * (close ? 0.25f : 0.1f);
+            if (hoverFade[i] < 0.003f) hoverFade[i] = 0f;
+        }
+    }
+protected override void OnPaintBackground(PaintEventArgs e)
 	{
 	}
 
@@ -421,20 +467,21 @@ internal sealed class VisualizerForm : Form
 				}
 		int width = base.ClientSize.Width;
 		int num = Math.Max(2, (width - 252) / 64);
-		int num2 = base.ClientSize.Height - 6;
+		int baseHeight = base.ClientSize.Height - 6;
 		using SolidBrush brush = new SolidBrush(Color.FromArgb(180, 255, 255, 255));
 		for (int i = 0; i < 64; i++)
 		{
 			int x = i * (num + 4);
 			int num3 = 63 - i;
-			int num4 = Math.Max(4, (int)(levels[num3] * (float)num2));
+			int perBarMax = (int)(baseHeight * (1f - hoverFade[num3]));
+			int num4 = Math.Max(4, (int)(levels[num3] * perBarMax));
 			int y = base.ClientSize.Height - num4;
 			int radius = 3;
 			int num5 = (int)Math.Clamp(levels[num3] * 8f, 0f, 8f);
 			e.Graphics.FillRoundedTop(barBrushes[num3, num5], new Rectangle(x, y, num, num4), radius);
 			if (showPeaks)
 			{
-				int num6 = (int)(peaks[num3] * (float)num2);
+				int num6 = (int)(peaks[num3] * perBarMax);
 				int num7 = base.ClientSize.Height - num6;
 				e.Graphics.FillRectangle(brush, x, num7 - 6, num, 3);
 			}
