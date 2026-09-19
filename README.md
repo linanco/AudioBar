@@ -1,44 +1,61 @@
-# AudioBar 音频条
+# 🎵 AudioBar — Windows 桌面音频可视化条
 
-AudioBar 是一款运行于 Windows 平台的桌面音频可视化工具。通过 WASAPI loopback 捕获系统输出混音，在任务栏上方以频谱条形呈现实时音频，采用每柱峰值归一化、多频段独立检测与软饱和曲线，动态层次清晰稳定。
+贴在 Windows 任务栏上方的实时音频频谱条。随音乐节奏跳动，支持鼠标 hover 局部收起、高音白化、多频段独立增益。
 
-![效果预览](screenshot.png)
+![screenshot](https://raw.githubusercontent.com/linanco/AudioBar/main/screenshot.png)
 
-## 功能特性
+## ✨ 特性
 
-- **每柱峰值归一化**：各条独立维护包络（快起慢落），各频段动态互不干扰。
-- **多频段独立检测**：低频、人声主体（300 Hz–3 kHz）、齿音区（2–6 kHz）、高频四段独立跟踪，避免人声、旋律与瞬态抢占视觉空间。
-- **高音高亮**： presence 频段 / 镲片 / 高 solo 出现时柱子弹闪白，退去自动回到壁纸渐变色。
-- **软饱和动态曲线**：持续音停在中等高度，只有鼓点等瞬态才能冲顶，消除"整条贴顶成线"的问题。
-- **可靠捕获生命周期**：设备热插拔自动重连、看门狗恢复、命名互斥体保证单实例运行。
+- **真实"活"的频谱** — 每根柱子独立包络（攻击 / 释放分离），不会整条一起贴顶，人声、鼓点、高音层次分明
+- **多频段独立检测** — 低音、人声、高音各有自己的能量包络，不会互相淹没
+- **高音白化** — 高音/镲片/齿音一冲，柱子瞬间闪白
+- **鼠标局部 hover 收起** — 鼠标靠近音频条时，只有指向的那一小撮柱子缩下去（高斯权重衰减），其他照常跳动
+- **桌面取色** — 柱子颜色每 3 秒抓取屏幕中部色带，随壁纸/动态壁纸实时渐变
+- **设备热插拔** — 音响/耳机切换自动重连，不用重启
 
-## 运行环境
+## 📥 下载
 
-- Windows 10 / 11 x64
-- .NET 9 Desktop Runtime（发布版已自包含，无需额外安装）
+**最新稳定版：[v1.0.4](https://github.com/linanco/AudioBar/releases/tag/v1.0.4)**
 
-## 编译
+- [AudioBar.exe](https://github.com/linanco/AudioBar/releases/download/v1.0.4/AudioBar.exe) — 自包含单文件，免装 .NET 直接运行（~48 MB）
 
-```bash
+## 🖱️ 交互
+
+| 操作 | 效果 |
+|------|------|
+| 托盘双击 | 显示 / 隐藏主面板 |
+| 托盘右键 → 打开主面板 | 进入调参面板（低音、人声、高音增益 / 鼓点灵敏度 / 软饱和等） |
+| 鼠标移到音频条 | 局部柱子收起，离开后弹回 |
+
+## 🛠️ 从源码编译
+
+需要 .NET 9 SDK：
+
+`ash
 dotnet build -c Release
-```
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+`
 
-产物路径：`bin\Release\net9.0-windows\AudioBar.exe`
+## 📁 项目结构
 
-如需发布为自包含单文件（推荐分发方式）：
+`
+AudioBar/
+├── VisualizerForm.cs     # 主窗口、绘图、hover、高音白化
+├── AudioCapture.cs       # WASAPI 循环捕获 + 频谱算法
+├── AudioSettings.cs      # 可调参数数据类 + 持久化（INCOMPLETE）
+├── SettingsForm.cs       # 调参主面板
+├── DefaultDeviceClient.cs
+└── GraphicsExtensions.cs # 圆角顶部绘制
+`
 
-```bash
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true
-```
+## ⚙️ 算法亮点
 
-## 运行
+- **相对每柱峰值归一化** — 不用全局自动增益，人声不会被低频垫音淹没
+- **高斯 hover 权重** — exp(−dist² / (2σ²))，sigma=3.5，影响半径约 ±10 根柱
+- **软饱和防贴顶** — 持续音停在中等高度，瞬态鼓点才冲顶
+- **慢速自动增益** — 只随整体音量小幅调节，不跟着每帧乱跳
+- **4096 汉宁窗 + 1024 重叠** — 兼顾频率分辨率和帧率
 
-```bash
-dotnet run -c Release
-```
+## 📜 License
 
-或直接运行发布产物 `AudioBar.exe`。
-
-## 许可证
-
-待定
+[MIT](LICENSE)
